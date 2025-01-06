@@ -1,12 +1,10 @@
-NeonatalBERT
+NeonatalBERT Workflow for Predicting Multiple Neonatal Outcomes from Clinical Notes
 =========================
 
-# NeonatalBERT Workflow for Benchmark Dataset Generation and Machine Learning Models
-
-Python workflow for generating benchmark datasets and machine learning models from neonatal-related clinical notes. See our [Scientific Data](https://www.nature.com/articles/s41597-022-01782-9) article for the whole story.
+Python workflow for developing and validating NeonatalBERT model for Predicting Multiple Neonatal Outcomes from Clinical Notes
 
 ## Table of contents
-* [General info](#general-info)
+* [General info](#general-info
 * [Structure](#structure)
 * [Requirements and Setup](#requirements-and-setup)
 * [Workflow](#workflow)
