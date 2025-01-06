@@ -3,16 +3,6 @@ NeonatalBERT Workflow for Predicting Multiple Neonatal Outcomes from Clinical No
 
 Python workflow for developing and validating NeonatalBERT model for Predicting Multiple Neonatal Outcomes from Clinical Notes
 
-## Table of contents
-* [General info](#general-info
-* [Structure](#structure)
-* [Requirements and Setup](#requirements-and-setup)
-* [Workflow](#workflow)
-    1. [Benchmark Data Generation](#1-benchmark-data-generation)
-    2. [Cohort Filtering](#2-cohort-filtering-and-data-processing)
-    3. [Prediction Task and Model Selection](#3-prediction-task-selection-and-model-evaluation)
-* [Citation](#citation)
-
 ## General info
 
 Clinical decisions in neonatal care are critical for optimizing patient outcomes during the crucial early stages of life. Machine learning-based clinical prediction models have the potential to enhance neonatal care.
@@ -47,7 +37,7 @@ The following sub-sections describe the sequential modules within the NeonatalBE
 
 Prior to these steps, ensure the repository and NeonatalBERT data have been set up locally.
 
-### 1. Benchmark Data Generation
+### 1. Model pretraining
 ~~~
 python extract_master_dataset.py --data_path {data_path} --output_path {output_path}
 ~~~
@@ -69,7 +59,7 @@ The input neonatal-related notes and records are taken to form the root table, w
 
 A total of **81** variables are included in `master_dataset.csv` (Refer to Table 3 of the article for a full variable list).
 
-### 2. Cohort Filtering and Data Processing
+### 2. Model validation using two datasets for downstream tasks (predicting multiple neonatal outcomes)
 ~~~
 python data_general_processing.py --master_dataset_path {master_dataset_path} --output_path {output_path}
 ~~~
@@ -89,7 +79,7 @@ python data_general_processing.py --master_dataset_path {master_dataset_path} --
 
 Outlier values in clinical variables are detected and imputed using methods validated in related studies. The data is split into `train.csv` and `test.csv`, and additional variables for clinical scores are added.
 
-### 3. Prediction Task Selection and Model Evaluation
+### 3. Baseline model: comparison with LLMs (Llama-3.1-8B-Instruct)
 
 Prediction modeling is currently handled by Python notebooks (`.ipynb` files) corresponding to each prediction task.
 
