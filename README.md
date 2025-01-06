@@ -4,11 +4,11 @@ This repository provides a comprehensive Python-based workflow for developing an
 
 ## General Information
 
-Clinical decision-making in neonatal care is crucial for improving outcomes during the early stages of life. Machine learning (ML) models, particularly those trained on clinical data, have significant potential to assist in neonatal care. With the increasing adoption of Electronic Health Records (EHR) for both neonatal and maternal data, there is an opportunity to leverage these records for more effective clinical predictions.
+This study introduces **NeonatalBERT**, the first domain-specific language model pre-trained on a large corpus of neonatal clinical notes, addressing a critical gap in neonatal care research. Unlike general clinical language models, NeonatalBERT captures nuanced neonatal-specific terminologies and clinical patterns, enabling more precise risk estimation for neonatal outcomes.
 
-Our dataset comprises over **10 million neonatal-related clinical notes** from approximately **40,000 mother-baby pairs** treated at Stanford-affiliated hospitals. This dataset represents a valuable resource for research and model development.
+A key contribution of this study is a robust evaluation framework that includes internal and external cohorts, demonstrating the model's generalizability across healthcare institutions. By leveraging unstructured clinical notes, NeonatalBERT facilitates early risk estimation for complex neonatal outcomes, such as bronchopulmonary dysplasia, necrotizing enterocolitis, sepsis, and mortality.
 
-However, a key challenge remains: the need for publicly available benchmark datasets and models to enable reproducible and comparable research. This repository addresses that challenge by providing a workflow that constructs a benchmark dataset for NeonatalBERT and evaluates baseline models for predicting neonatal outcomes.
+This model offers a transformative tool for neonatal care by supporting early risk identification and timely interventions for at-risk neonates. Its strong performance across multiple datasets suggests potential for enhancing clinical decision-making, particularly in settings with incomplete structured data. This repository addresses that challenge by providing a workflow that constructs a benchmark dataset for NeonatalBERT and evaluates baseline models for predicting neonatal outcomes.
 
 ## Repository Structure
 
