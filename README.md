@@ -32,18 +32,7 @@ Please note that the **Stanford newborn dataset** used in this workflow is not i
 ## Workflow Overview
 
 ### 1. Model Pretraining
-To pretrain NeonatalBERT using clinical notes:
-
-```bash
-python format_for_bert_children.py --input_path /path/to/input.pkl --output_name data_neo1100k_hp
-```
-
-**Arguments:**
-- `--input_path`: Path to the input pickle file containing the preprocessed clinical notes.
-- `--output_name`: Output filename suffix for the pretraining data.
-
-**Output:**
-- Pretraining dataset formatted for BERT input.
+To Pretrain NeonatalBERT using clinical notes:
 
 **Details:**
 This step processes raw clinical notes and formats them into a suitable structure for BERT-based pretraining. Ensure that the data input path points to a valid `.pkl` file.
@@ -51,41 +40,14 @@ This step processes raw clinical notes and formats them into a suitable structur
 ### 2. Model Fine-tuning and Validation
 To fine-tune NeonatalBERT on prediction tasks for neonatal outcomes using two datasets:
 
-```bash
-python fine_tune_model.py --train_path /path/to/train.pkl --val_path /path/to/val.pkl --epochs 3 --output_dir /path/to/save
-```
-
-**Arguments:**
-- `--train_path`: Path to the training dataset.
-- `--val_path`: Path to the validation dataset.
-- `--epochs`: Number of fine-tuning epochs.
-- `--output_dir`: Directory to save the fine-tuned model.
-
-**Output:**
-- Fine-tuned NeonatalBERT model saved in the specified directory.
-
 **Details:**
-This step fine-tunes NeonatalBERT on clinical prediction tasks related to neonatal outcomes, such as mortality prediction, length of stay, and diagnosis-related outcomes.
+This step fine-tunes NeonatalBERT on clinical prediction tasks related to neonatal outcomes, such as mortality prediction, and diagnosis-related outcomes.
 
 ### 3. Baseline Model Comparison
 To compare NeonatalBERT with other large language models (LLMs), such as LLaMA-3.1-8B-Instruct:
 
-**Script:**
-
-```bash
-python evaluate_baseline.py --model_name llama-3.1-8b --data_path /path/to/test.pkl --metrics accuracy f1
-```
-
-**Arguments:**
-- `--model_name`: Name of the baseline model (e.g., `llama-3.1-8b`).
-- `--data_path`: Path to the test dataset.
-- `--metrics`: Evaluation metrics (e.g., `accuracy`, `f1`).
-
-**Output:**
-- Evaluation scores for baseline models.
-
 **Details:**
-This step compares NeonatalBERT with other baseline models using specified metrics such as accuracy and F1 score.
+This step compares NeonatalBERT with other baseline models using specified metrics such as sensitivity and specificity.
 
 ## Citation
 This project is currently under review. Please refer to the repository for updates on the publication status.
