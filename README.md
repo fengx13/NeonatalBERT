@@ -19,7 +19,7 @@ What you can do at your own institution:
 
 1. **Fine-tuning-only mode (no NeonatalBERT weights needed).** Fine-tune a public clinical encoder such as [`emilyalsentzer/Bio_ClinicalBERT`](https://huggingface.co/emilyalsentzer/Bio_ClinicalBERT) on your own first-day notes using `model_fine_tune/finetune.py`. This is the "fine-tuning-only mode" for resource-limited settings described in the paper, and it reproduces the Bio_ClinicalBERT comparator.
 2. **Re-create NeonatalBERT locally.** Run the domain-adaptive pretraining pipeline in `model_pretraining/` on your own neonatal notes, starting from Bio_ClinicalBERT, then fine-tune the result. This mirrors how NeonatalBERT was built.
-3. **Collaborate with us.** If you are interested in evaluating the original NeonatalBERT model on your data, please contact Feng Xie (xie00469@umn.edu). Any such evaluation would require appropriate institutional agreements.
+3. **Collaborate with us.** If you are interested in evaluating the model on your data, please contact Feng Xie (xie00469@umn.edu). It may require appropriate institutional agreements.
 
 The **external MIMIC-III (BIDMC) data** are available to credentialed users through [PhysioNet](https://physionet.org/content/mimiciii/1.4/). `data_preparation/build_mimic3_cohort.py` builds the newborn cohort used in the paper.
 
