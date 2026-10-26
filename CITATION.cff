@@ -1,0 +1,74 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the NeonatalBERT paper."
+title: "NeonatalBERT"
+repository-code: "https://github.com/fengx13/NeonatalBERT"
+authors:
+  - family-names: Xie
+    given-names: Feng
+preferred-citation:
+  type: article
+  title: "Development and validation of a pre-trained language model for neonatal morbidities: a retrospective, multicentre, prognostic study"
+  journal: "The Lancet Digital Health"
+  year: 2025
+  volume: 7
+  issue: 12
+  doi: "10.1016/j.landig.2025.100926"
+  authors:
+    - family-names: Xie
+      given-names: Feng
+    - family-names: Chung
+      given-names: Philip
+    - family-names: Reiss
+      given-names: Jonathan D
+    - family-names: Tjoa
+      given-names: Erico
+    - family-names: De Francesco
+      given-names: Davide
+    - family-names: Phongpreecha
+      given-names: Thanaphong
+    - family-names: Haberkorn
+      given-names: William
+    - family-names: Chakraborty
+      given-names: Dipro
+    - family-names: Chang
+      given-names: Alan Lee
+    - family-names: James
+      given-names: Tomin
+    - family-names: Kim
+      given-names: Yeasul
+    - family-names: Mataraso
+      given-names: Samson
+    - family-names: Espinosa
+      given-names: Camilo
+    - family-names: Yang
+      given-names: Liu
+    - family-names: Shu
+      given-names: Chi-Hung
+    - family-names: Xue
+      given-names: Lei
+    - family-names: Berson
+      given-names: Eloïse
+    - family-names: Mohammadi
+      given-names: Neshat
+    - family-names: Shome
+      given-names: Sayane
+    - family-names: Reincke
+      given-names: S Momsen
+    - family-names: Ghanem
+      given-names: Marc
+    - family-names: Maric
+      given-names: Ivana
+    - family-names: Gaudilliere
+      given-names: Brice
+    - family-names: Angst
+      given-names: Martin S
+    - family-names: Sylvester
+      given-names: Karl
+    - family-names: Shaw
+      given-names: Gary M
+    - family-names: Prince
+      given-names: Lawrence S
+    - family-names: Stevenson
+      given-names: David K
+    - family-names: Aghaeepour
+      given-names: Nima

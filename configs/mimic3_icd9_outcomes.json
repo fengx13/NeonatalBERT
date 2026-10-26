@@ -1,0 +1,12 @@
+{
+  "_comment": "ICD-9-CM code prefixes (no dots) used to label outcomes in the MIMIC-III (BIDMC) newborn cohort. A diagnosis matches an outcome if its code starts with any listed prefix. These are standard neonatal ICD-9 codes provided as a starting point; the exact code lists used in the paper are given in its appendix. Death is taken from ADMISSIONS.HOSPITAL_EXPIRE_FLAG.",
+  "rds": ["769"],
+  "bpd": ["7707"],
+  "pulmonary_haemorrhage": ["7703"],
+  "ivh": ["7721"],
+  "pda": ["7470"],
+  "sepsis": ["77181"],
+  "jaundice": ["774"],
+  "nec": ["7775"],
+  "rop": ["3622"]
+}

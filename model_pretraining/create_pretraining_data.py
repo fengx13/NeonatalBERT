@@ -5,17 +5,29 @@ from tempfile import TemporaryDirectory
 import shelve
 from multiprocessing import Pool
 from random import random, randrange, randint, shuffle, choice
-from pytorch_transformers.tokenization_bert import BertTokenizer
+from transformers import BertTokenizer
 import numpy as np
 import json
 import collections
 
 """
-Pretraining Data Creation Script for BERT
+Step 2 of NeonatalBERT pretraining: generate masked-language-model (MLM) and
+next-sentence-prediction (NSP) training instances from the text corpus produced
+by prepare_notes.py (one sentence per line, blank line between documents).
 
-This script takes a corpus of text and generates training instances for BERT pretraining.
-The script supports whole word masking, handles large datasets by reducing memory usage when needed,
-creates masked language model (MLM) and next sentence prediction (NSP) tasks, and outputs training files in JSON format.
+Adapted from the pregenerate_training_data.py example of Hugging Face's
+pytorch-pretrained-BERT. Supports whole-word masking and an on-disk document
+store for large corpora. Writes one JSON Lines file per epoch
+(epoch_{i}.json, one instance per line) plus epoch_{i}_metrics.json, which are
+consumed by pretrain.py.
+
+NeonatalBERT was initialised from Bio_ClinicalBERT, so use its tokenizer:
+
+python model_pretraining/create_pretraining_data.py \
+    --train_corpus corpus/neonatal_notes.txt \
+    --bert_model emilyalsentzer/Bio_ClinicalBERT \
+    --output_dir corpus/pregenerated --epochs_to_generate 3 \
+    --max_seq_len 128 --do_whole_word_mask --reduce_memory
 """
 
 class DocumentDatabase:
@@ -288,7 +300,8 @@ def main():
     parser.add_argument('--train_corpus', type=Path, required=True)
     parser.add_argument("--output_dir", type=Path, required=True)
     parser.add_argument("--bert_model", type=str, required=True, help="Bert pre-trained model (e.g., bert-base-uncased)")
-    parser.add_argument("--do_lower_case", action="store_true")
+    parser.add_argument("--do_lower_case", action="store_true", default=None,
+                        help="Force lower-casing (default: use the tokenizer's own setting)")
     parser.add_argument("--do_whole_word_mask", action="store_true", help="Use whole word masking.")
     parser.add_argument("--reduce_memory", action="store_true", help="Reduce memory usage by storing data on disk.")
     parser.add_argument("--num_workers", type=int, default=1, help="Number of worker processes.")
@@ -303,8 +316,9 @@ def main():
     if args.num_workers > 1 and args.reduce_memory:
         raise ValueError("Cannot use multiple workers with reduced memory.")
 
-    tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
-    vocab_list = list(tokenizer.vocab.keys())
+    tok_kwargs = {} if args.do_lower_case is None else {"do_lower_case": True}
+    tokenizer = BertTokenizer.from_pretrained(args.bert_model, **tok_kwargs)
+    vocab_list = list(tokenizer.get_vocab().keys())
 
     with DocumentDatabase(reduce_memory=args.reduce_memory) as docs:
         with args.train_corpus.open() as f:
@@ -322,7 +336,7 @@ def main():
         if len(docs) <= 1:
             exit("ERROR: No document breaks found in the input file. Add blank lines to indicate breaks between documents.")
 
-        args.output_dir.mkdir(exist_ok=True)
+        args.output_dir.mkdir(parents=True, exist_ok=True)
 
         if args.num_workers > 1:
             with Pool(min(args.num_workers, args.epochs_to_generate)) as pool:
