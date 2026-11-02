@@ -1,7 +1,5 @@
 # NeonatalBERT: a pretrained language model for predicting neonatal morbidities from clinical notes
 
-version 2: 10/27/2026: Codebooks were futher optimized to increase easier access for reproducible with latest pakckage version and to increase reproducibility, we have created a synthetic notes data generation codebook to generate synthetic data for easier to reproduce our codebook. 
-
 **Update (version 2, October 27, 2026):** The code has been reorganised with easier access and optimized to run with current package versions. To improve reproducibility, we also added a script that generates synthetic clinical notes, so the full pipeline can be run and checked without access to any patient data (see [Quick start on synthetic data](#quick-start-on-synthetic-data-a-few-minutes-on-a-cpu)).
 
 This repository contains the code for **NeonatalBERT**, a domain-specific language model for neonatal clinical notes, described in:
