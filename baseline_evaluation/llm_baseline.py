@@ -1,25 +1,35 @@
 #!/usr/bin/env python
 """
-Zero-shot LLM baseline (e.g. Meta Llama-3.1-8B-Instruct) for neonatal outcome
-prediction from first-day clinical notes, as compared with NeonatalBERT in
-Xie et al., Lancet Digit Health 2025.
+Zero-shot LLM baseline (Meta Llama-3.1-8B-Instruct) for neonatal outcome
+prediction, following the appendix of Xie et al., Lancet Digit Health 2025
+("Implementation of Llama-3.1-8B"):
 
-For every patient and outcome, the model receives the first-day notes and one
-yes/no question, and answers with "1" (yes) or "0" (no). Instead of sampling
-text, the script reads the next-token probabilities of "1" and "0":
+  * one question per outcome, asked after the patient's notes, in the form
+        "<notes>\n\nWill this neonatal patient develop sepsis? Answer 1 if yes,
+         0 if no. Answer with only the number."
+  * the model is used zero-shot, and its output is constrained to "1" or "0"
+    (the paper used the Outlines package for constrained generation)
+  * sensitivity and specificity are computed from the model's answers
+  * the appendix example uses neonatal H&P notes (--note_types "History and physical")
 
-    p(yes) = P("1") / (P("1") + P("0"))
+Constrained choice between the single tokens "1" and "0" is implemented directly:
+the next-token probabilities of the two tokens are renormalised,
 
-This gives a deterministic answer (p >= 0.5 -> yes) for sensitivity and
-specificity, as well as a continuous score for AUROC/AUPRC.
+    p(yes) = P("1") / (P("1") + P("0")),
 
-The same cohort construction and train/test split as finetune.py are used,
-and only test patients are scored, so the results are directly comparable.
+and the answer is sampled from p(yes) (--decoding sample, as with Outlines'
+multinomial sampler in the original analysis) or taken as p(yes) >= 0.5
+(--decoding greedy, deterministic). p(yes) is also used to report AUROC/AUPRC,
+which the paper did not report for this baseline.
+
+The same cohort construction and test split as finetune.py are used, so the
+results are directly comparable.
 
 Usage
 -----
 python baseline_evaluation/llm_baseline.py \
-    --notes data/notes.csv --labels data/labels.csv \
+    --notes data/notes.csv --labels data/labels.csv --outcomes rds,bpd,nec,sepsis,death \
+    --note_types "History and physical" \
     --split column --split_col split --test_value test \
     --model_name meta-llama/Llama-3.1-8B-Instruct \
     --output_dir results/llama31_8b
@@ -44,45 +54,46 @@ from helpers import bootstrap_metrics, parse_list, save_json, summarise_results 
 logger = logging.getLogger("neonatalbert.llm_baseline")
 
 OUTCOME_NAMES = {
-    "rds": "respiratory distress syndrome (RDS)",
-    "bpd": "bronchopulmonary dysplasia (BPD)",
-    "pulmonary_haemorrhage": "pulmonary haemorrhage",
+    "rds": "Respiratory Distress Syndrome (RDS)",
+    "bpd": "Bronchopulmonary Dysplasia (BPD)",
+    "pulmonary_haemorrhage": "pulmonary hemorrhage",
+    "pulmonary_hemorrhage": "pulmonary hemorrhage",
     "pulmonary_hypertension": "pulmonary hypertension",
     "atelectasis": "atelectasis",
-    "aspiration": "aspiration syndrome",
-    "ivh": "intraventricular haemorrhage (IVH)",
-    "pvl": "periventricular leukomalacia (PVL)",
+    "aspiration": "meconium aspiration syndrome",
+    "mas": "meconium aspiration syndrome",
+    "ivh": "Intraventricular Hemorrhage (IVH)",
+    "pvl": "Periventricular Leukomalacia (PVL)",
     "seizures": "neonatal seizures",
-    "cns_other": "another central nervous system disorder",
-    "pda": "patent ductus arteriosus (PDA)",
+    "cns_other": "other central nervous system disorders",
+    "pda": "Patent Ductus Arteriosus (PDA)",
     "cv_instability": "cardiovascular instability",
     "sepsis": "sepsis",
-    "candidiasis": "candidiasis",
-    "anaemia": "anaemia",
-    "jaundice": "neonatal jaundice",
-    "nec": "necrotising enterocolitis (NEC)",
-    "rop": "retinopathy of prematurity (ROP)",
+    "candidiasis": "Candidiasis",
+    "anaemia": "anemia",
+    "anemia": "anemia",
+    "jaundice": "jaundice",
+    "nec": "Necrotizing Enterocolitis (NEC)",
+    "rop": "Retinopathy of Prematurity (ROP)",
 }
-
-SYSTEM_PROMPT = (
-    "You are an experienced neonatologist. Based only on the clinical notes "
-    "written during the first 24 hours after birth, predict the newborn's outcome. "
-    "Answer with a single digit: 1 for yes, 0 for no."
-)
+ANSWER_INSTRUCTION = "Answer 1 if yes, 0 if no. Answer with only the number."
 
 
 def question_for(outcome: str) -> str:
     if outcome in ("death", "mortality"):
-        return "Will this newborn die during the hospital stay?"
-    return f"Will this newborn develop {OUTCOME_NAMES.get(outcome, outcome.replace('_', ' '))}?"
+        return "Is the neonatal patient at risk of mortality?"
+    return f"Will this neonatal patient develop {OUTCOME_NAMES.get(outcome, outcome.replace('_', ' '))}?"
+
+
+def has_chat_template(tokenizer) -> bool:
+    return bool(getattr(tokenizer, "chat_template", None))
 
 
 def build_prompt(tokenizer, notes: str, outcome: str) -> str:
-    user = f"Clinical notes:\n{notes}\n\nQuestion: {question_for(outcome)}\nAnswer 1 (yes) or 0 (no)."
-    if getattr(tokenizer, "chat_template", None):
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}]
-        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    return f"{SYSTEM_PROMPT}\n\n{user}\nAnswer:"
+    user = f"{notes}\n\n{question_for(outcome)} {ANSWER_INSTRUCTION}"
+    if has_chat_template(tokenizer):
+        return tokenizer.apply_chat_template([{"role": "user", "content": user}], tokenize=False, add_generation_prompt=True)
+    return f"{user}\n"
 
 
 def truncate_notes(tokenizer, text: str, max_tokens: int) -> str:
@@ -95,8 +106,7 @@ def truncate_notes(tokenizer, text: str, max_tokens: int) -> str:
 def answer_token_ids(tokenizer):
     ids = {}
     for ans in ["1", "0"]:
-        toks = tokenizer(ans, add_special_tokens=False)["input_ids"]
-        ids[ans] = toks[-1]
+        ids[ans] = tokenizer(ans, add_special_tokens=False)["input_ids"][-1]
     if ids["1"] == ids["0"]:
         raise ValueError("Tokenizer maps '1' and '0' to the same token id")
     return ids["1"], ids["0"]
@@ -107,8 +117,13 @@ def score_prompts(model, tokenizer, prompts, batch_size, yes_id, no_id):
     probs = []
     for i in tqdm(range(0, len(prompts), batch_size), desc="Scoring", disable=not sys.stderr.isatty()):
         batch = prompts[i : i + batch_size]
-        enc = tokenizer(batch, return_tensors="pt", padding=True, add_special_tokens=False).to(model.device)
-        logits = model(**enc).logits[:, -1, :]  # left padding -> last position is the next token
+        # Chat templates already contain the BOS token; plain prompts need it added.
+        enc = tokenizer(batch, return_tensors="pt", padding=True,
+                        add_special_tokens=not has_chat_template(tokenizer)).to(model.device)
+        try:  # only compute logits for the last position (saves GPU memory on long prompts)
+            logits = model(**enc, logits_to_keep=1).logits[:, -1, :]
+        except TypeError:  # model class without logits_to_keep
+            logits = model(**enc).logits[:, -1, :]  # left padding -> last position is the next token
         two = torch.stack([logits[:, yes_id], logits[:, no_id]], dim=-1).float()
         probs.append(torch.softmax(two, dim=-1)[:, 0].cpu().numpy())
     return np.concatenate(probs)
@@ -118,8 +133,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--notes", required=True)
     ap.add_argument("--labels", required=True)
-    ap.add_argument("--outcomes", default=None)
+    ap.add_argument("--outcomes", required=True, help="Comma-separated binary outcome columns")
     ap.add_argument("--max_hours", type=float, default=24)
+    ap.add_argument("--note_types", default=None, help='Note types to include, e.g. "History and physical" (appendix example)')
     ap.add_argument("--split", choices=["random", "column", "none"], default="random")
     ap.add_argument("--split_col", default=None)
     ap.add_argument("--test_value", default="test")
@@ -127,6 +143,8 @@ def main():
     ap.add_argument("--val_size", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--model_name", default="meta-llama/Llama-3.1-8B-Instruct")
+    ap.add_argument("--decoding", choices=["sample", "greedy"], default="sample",
+                    help="sample: draw the 0/1 answer from p(yes) (original analysis); greedy: answer = p(yes) >= 0.5")
     ap.add_argument("--max_note_tokens", type=int, default=6000, help="Truncate notes to fit the context window")
     ap.add_argument("--batch_size", type=int, default=4)
     ap.add_argument("--dtype", choices=["bfloat16", "float16", "float32"], default="bfloat16")
@@ -139,9 +157,11 @@ def main():
     logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
     split_col = args.split_col if args.split == "column" else None
-    cohort, outcomes = build_cohort(args.notes, args.labels, parse_list(args.outcomes), args.max_hours, None, split_col)
+    cohort, outcomes = build_cohort(args.notes, args.labels, parse_list(args.outcomes), args.max_hours,
+                                    parse_list(args.note_types), split_col)
     _, _, test_df = split_cohort(cohort, args.split, split_col, args.test_value, args.test_size, args.val_size, args.seed)
-    logger.info("Scoring %d test patients x %d outcomes with %s", len(test_df), len(outcomes), args.model_name)
+    logger.info("Scoring %d test patients x %d outcomes with %s (%s decoding)", len(test_df), len(outcomes),
+                args.model_name, args.decoding)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     tokenizer.padding_side = "left"
@@ -153,28 +173,35 @@ def main():
         device_map="auto" if torch.cuda.is_available() else None,
     ).eval()
     yes_id, no_id = answer_token_ids(tokenizer)
+    rng = np.random.RandomState(args.seed)
 
-    notes = [truncate_notes(tokenizer, t, args.max_note_tokens) for t in test_df["text"]]
+    notes = np.asarray([truncate_notes(tokenizer, t, args.max_note_tokens) for t in test_df["text"]], dtype=object)
     preds, results = [], {}
     for o in outcomes:
-        prompts = [build_prompt(tokenizer, n, o) for n in notes]
-        p_yes = score_prompts(model, tokenizer, prompts, args.batch_size, yes_id, no_id)
-        y = test_df[o].to_numpy()
-        preds.append(pd.DataFrame({"patient_id": test_df["patient_id"], "outcome": o, "y_true": y,
-                                   "p_yes": p_yes, "answer": (p_yes >= 0.5).astype(int)}))
+        m = test_df[o].notna().to_numpy()  # patients excluded for this outcome are not scored
+        y = test_df.loc[m, o].to_numpy().astype(int)
+        p_yes = score_prompts(model, tokenizer, [build_prompt(tokenizer, n, o) for n in notes[m]], args.batch_size, yes_id, no_id)
+        answer = (rng.rand(len(p_yes)) < p_yes).astype(int) if args.decoding == "sample" else (p_yes >= 0.5).astype(int)
+        preds.append(pd.DataFrame({"patient_id": test_df.loc[m, "patient_id"], "outcome": o, "y_true": y,
+                                   "p_yes": p_yes, "answer": answer}))
         if len(np.unique(y)) < 2:
             logger.warning("Skipping metrics for %s: only one class in the test set", o)
             continue
-        # threshold 0.5 = the model's own yes/no answer
-        results[o] = bootstrap_metrics(y, p_yes, n_bootstraps=args.n_bootstraps, random_seed=args.seed, threshold=0.5)
-        logger.info("%s | AUROC %.3f | sensitivity %.3f | specificity %.3f", o,
-                    results[o]["auroc"]["estimate"], results[o]["sensitivity"]["estimate"], results[o]["specificity"]["estimate"])
+        # Sensitivity/specificity/F1 from the model's 0/1 answers (as in the paper) ...
+        res = bootstrap_metrics(y, answer.astype(float), n_bootstraps=args.n_bootstraps, random_seed=args.seed, threshold=0.5)
+        # ... and threshold-free discrimination from p(yes)
+        res_p = bootstrap_metrics(y, p_yes, n_bootstraps=args.n_bootstraps, random_seed=args.seed, threshold=0.5)
+        for k in ["auroc", "auprc", "auprc_relative"]:
+            res[k] = res_p[k]
+        results[o] = res
+        logger.info("%s | sensitivity %.3f | specificity %.3f | AUROC(p_yes) %.3f", o,
+                    res["sensitivity"]["estimate"], res["specificity"]["estimate"], res["auroc"]["estimate"])
 
     pd.concat(preds).to_csv(out / "test_predictions.csv", index=False)
     save_json(results, out / "test_metrics.json")
     summary = summarise_results(results)
     summary.to_csv(out / "test_metrics_summary.csv", index=False)
-    print(summary[[c for c in ["outcome", "auroc", "auprc", "sensitivity", "specificity", "f1"] if c in summary]].to_string(index=False))
+    print(summary[[c for c in ["outcome", "sensitivity", "specificity", "f1", "auroc", "auprc"] if c in summary]].to_string(index=False))
 
 
 if __name__ == "__main__":

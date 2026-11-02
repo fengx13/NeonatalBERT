@@ -1,6 +1,6 @@
 # Python >= 3.9 (the paper used Python 3.9)
 # Install PyTorch for your CUDA version first if needed: https://pytorch.org/get-started/locally/
-torch>=2.1
+torch>=2.3
 transformers>=4.56
 accelerate>=0.26        # device_map="auto" in the LLM baseline
 numpy>=1.24

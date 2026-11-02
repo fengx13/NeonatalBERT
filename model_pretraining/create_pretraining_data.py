@@ -9,6 +9,7 @@ from transformers import BertTokenizer
 import numpy as np
 import json
 import collections
+import random as pyrandom
 
 """
 Step 2 of NeonatalBERT pretraining: generate masked-language-model (MLM) and
@@ -275,6 +276,9 @@ def create_training_file(docs, vocab_list, args, epoch_num):
         args (Namespace): Command-line arguments.
         epoch_num (int): Epoch number.
     """
+    # Seed per epoch so results are reproducible, including with --num_workers > 1
+    pyrandom.seed(args.seed + epoch_num)
+    np.random.seed(args.seed + epoch_num)
     epoch_filename = args.output_dir / f"epoch_{epoch_num}.json"
     num_instances = 0
     with epoch_filename.open('w') as epoch_file:
@@ -310,6 +314,7 @@ def main():
     parser.add_argument("--short_seq_prob", type=float, default=0.1, help="Probability of short sequences.")
     parser.add_argument("--masked_lm_prob", type=float, default=0.15, help="Probability of masking tokens.")
     parser.add_argument("--max_predictions_per_seq", type=int, default=20, help="Max number of masked tokens.")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed (masking, NSP sampling).")
 
     args = parser.parse_args()
 
@@ -318,7 +323,8 @@ def main():
 
     tok_kwargs = {} if args.do_lower_case is None else {"do_lower_case": True}
     tokenizer = BertTokenizer.from_pretrained(args.bert_model, **tok_kwargs)
-    vocab_list = list(tokenizer.get_vocab().keys())
+    # Order by token id: get_vocab() order is not stable across processes for fast tokenizers
+    vocab_list = [tok for tok, _ in sorted(tokenizer.get_vocab().items(), key=lambda kv: kv[1])]
 
     with DocumentDatabase(reduce_memory=args.reduce_memory) as docs:
         with args.train_corpus.open() as f:

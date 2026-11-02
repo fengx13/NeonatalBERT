@@ -12,6 +12,8 @@ notes table (one row per note)
 labels table (one row per patient)
     patient_id
     <outcome columns>   binary 0/1, one column per outcome
+    <outcome>_dx_hours  (optional) hours from birth to diagnosis, used to exclude
+                        cases already diagnosed within the prediction window
     <split column>      (optional) e.g. split = "train" / "test"
 
 Tables may be .csv, .csv.gz, .parquet or .pkl.
@@ -29,16 +31,48 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def read_table(path) -> pd.DataFrame:
+def read_table(path, id_col: str = "patient_id") -> pd.DataFrame:
+    """Read a table; patient ids are always handled as stripped strings so that
+    notes and labels match regardless of how each file stored them."""
     path = Path(path)
     suffixes = "".join(path.suffixes).lower()
     if suffixes.endswith(".parquet"):
-        return pd.read_parquet(path)
-    if suffixes.endswith(".pkl") or suffixes.endswith(".pickle"):
-        return pd.read_pickle(path)
-    if ".csv" in suffixes:
-        return pd.read_csv(path)
-    raise ValueError(f"Unsupported file type: {path}")
+        df = pd.read_parquet(path)
+    elif suffixes.endswith(".pkl") or suffixes.endswith(".pickle"):
+        df = pd.read_pickle(path)
+    elif ".csv" in suffixes:
+        df = pd.read_csv(path, dtype={id_col: str})
+    else:
+        raise ValueError(f"Unsupported file type: {path}")
+    if id_col in df:
+        if df[id_col].isna().any():
+            raise ValueError(f"{path}: {df[id_col].isna().sum()} rows have a missing {id_col}")
+        df[id_col] = df[id_col].astype(str).str.strip()
+    return df
+
+
+def check_id_overlap(notes: pd.DataFrame, labels: pd.DataFrame, id_col: str = "patient_id") -> None:
+    """Fail loudly when notes and labels do not share patient ids (e.g. '000123' vs '123')."""
+    n_lab = labels[id_col].nunique()
+    shared = len(set(labels[id_col]) & set(notes[id_col]))
+    if shared == 0:
+        raise ValueError(
+            f"No {id_col} values are shared between the notes and labels files. Check that both use the same "
+            f"identifier format (e.g. leading zeros). Examples - notes: {notes[id_col].head(3).tolist()}, "
+            f"labels: {labels[id_col].head(3).tolist()}"
+        )
+    if shared < 0.5 * n_lab:
+        logger.warning("Only %d of %d labelled patients have any notes; check the %s format.", shared, n_lab, id_col)
+
+
+def check_unique_ids(labels: pd.DataFrame, id_col: str = "patient_id") -> None:
+    dup = labels[id_col].duplicated(keep=False)
+    if dup.any():
+        raise ValueError(
+            f"The labels file must have one row per patient, but {labels.loc[dup, id_col].nunique()} {id_col} values "
+            f"appear more than once (e.g. {labels.loc[dup, id_col].head(3).tolist()}). Duplicates could place the same "
+            f"patient in both the training and test sets."
+        )
 
 
 def aggregate_notes(
@@ -49,17 +83,23 @@ def aggregate_notes(
     text_col: str = "note_text",
     time_col: str = "hours_since_birth",
     type_col: str = "note_type",
-    include_note_type_header: bool = True,
+    include_note_type_header: bool = False,
 ) -> pd.DataFrame:
     """
     Keep notes written within `max_hours` of birth (the paper uses the first
-    24 h), drop exact duplicate texts, and concatenate each patient's notes in
-    chronological order into a single document.
+    24 h), drop exact duplicate texts, and collect each patient's notes in
+    chronological order.
+
+    Returns one row per patient with
+        notes : list of note texts (used for note-level embeddings, as in the paper)
+        text  : the same notes joined into one document (used by the LLM baseline)
     """
     df = notes.copy()
     df = df[df[text_col].notna() & (df[text_col].astype(str).str.strip() != "")]
 
-    if note_types is not None and type_col in df:
+    if note_types is not None:
+        if type_col not in df:
+            raise ValueError(f"--note_types was given but the notes table has no '{type_col}' column")
         df = df[df[type_col].isin(note_types)]
 
     if max_hours is not None:
@@ -74,7 +114,7 @@ def aggregate_notes(
 
     df = df.drop_duplicates(subset=[id_col, text_col])
     sort_cols = [id_col] + ([time_col] if time_col in df else [])
-    df = df.sort_values(sort_cols)
+    df = df.sort_values(sort_cols, kind="stable")
 
     def _fmt(row):
         txt = str(row[text_col]).strip()
@@ -82,10 +122,11 @@ def aggregate_notes(
             return f"[{row[type_col]}] {txt}"
         return txt
 
-    df["_formatted"] = df.apply(_fmt, axis=1)
-    agg = df.groupby(id_col, sort=False)["_formatted"].apply(lambda s: "\n\n".join(s)).reset_index()
-    agg = agg.rename(columns={"_formatted": "text"})
-    logger.info("Aggregated %d notes into %d patient documents", len(df), len(agg))
+    df["_formatted"] = df.apply(_fmt, axis=1) if len(df) else pd.Series(dtype=str)
+    agg = df.groupby(id_col, sort=False)["_formatted"].apply(list).reset_index().rename(columns={"_formatted": "notes"})
+    agg["text"] = agg["notes"].apply(lambda xs: "\n\n".join(xs))
+    logger.info("Collected %d notes for %d patients (mean %.1f notes per patient)",
+                len(df), len(agg), len(df) / max(len(agg), 1))
     return agg
 
 
@@ -97,25 +138,39 @@ def build_cohort(
     note_types: Optional[Sequence[str]] = None,
     split_col: Optional[str] = None,
     id_col: str = "patient_id",
+    include_note_type_header: bool = False,
+    dx_suffix: str = "_dx_hours",
 ) -> Tuple[pd.DataFrame, List[str]]:
-    """Merge aggregated first-day notes with patient-level labels."""
-    notes = read_table(notes_path)
-    labels = read_table(labels_path)
+    """
+    Merge first-day notes with patient-level labels.
 
-    docs = aggregate_notes(notes, max_hours=max_hours, note_types=note_types, id_col=id_col)
-    reserved = {id_col, "text"} | ({split_col} if split_col else set())
+    Exclusions (as in the paper):
+      * patients without eligible notes
+      * patients with missing outcome data
+      * per outcome: patients already diagnosed within the prediction window.
+        If the labels table has a column `<outcome>_dx_hours` (hours from birth
+        to diagnosis), positive patients with <outcome>_dx_hours <= max_hours
+        are set to missing for that outcome only, so they are excluded from
+        its training and evaluation.
+    """
+    notes = read_table(notes_path, id_col)
+    labels = read_table(labels_path, id_col)
+    check_unique_ids(labels, id_col)
+    check_id_overlap(notes, labels, id_col)
+
+    docs = aggregate_notes(notes, max_hours=max_hours, note_types=note_types, id_col=id_col,
+                           include_note_type_header=include_note_type_header)
     if outcomes is None:
-        # Default: every binary (0/1) column other than the id / split columns.
-        outcomes = [
-            c for c in labels.columns
-            if c not in reserved and set(pd.unique(labels[c].dropna())) <= {0, 1}
-        ]
-        logger.info("No --outcomes given; using binary columns: %s", outcomes)
+        raise ValueError("Specify the outcome columns explicitly (--outcomes), e.g. --outcomes rds,bpd,nec,death")
     missing = [o for o in outcomes if o not in labels.columns]
     if missing:
         raise ValueError(f"Outcome columns not found in labels file: {missing}")
+    bad = [o for o in outcomes if not set(pd.unique(labels[o].dropna())) <= {0, 1}]
+    if bad:
+        raise ValueError(f"Outcome columns must be binary 0/1: {bad}")
 
-    keep = [id_col] + list(outcomes) + ([split_col] if split_col else [])
+    dx_cols = [f"{o}{dx_suffix}" for o in outcomes if f"{o}{dx_suffix}" in labels]
+    keep = [id_col] + list(outcomes) + dx_cols + ([split_col] if split_col else [])
     cohort = docs.merge(labels[keep], on=id_col, how="inner")
     n_no_notes = labels[id_col].nunique() - cohort[id_col].nunique()
     if n_no_notes:
@@ -127,7 +182,21 @@ def build_cohort(
     if before - len(cohort):
         logger.info("Excluded %d patients with missing outcome data", before - len(cohort))
     for o in outcomes:
-        cohort[o] = cohort[o].astype(int)
+        cohort[o] = cohort[o].astype(float)
+
+    # Per-outcome exclusion of cases diagnosed within the prediction window.
+    if max_hours is not None:
+        for o in outcomes:
+            col = f"{o}{dx_suffix}"
+            if col in cohort:
+                early = (cohort[o] == 1) & (cohort[col] <= max_hours)
+                if early.any():
+                    cohort.loc[early, o] = np.nan
+                    logger.info("%s: excluded %d cases diagnosed within the first %g h", o, int(early.sum()), max_hours)
+        if outcomes and not dx_cols:
+            logger.warning("No <outcome>%s columns found: cases diagnosed within the prediction window cannot be "
+                           "excluded (the paper excluded them). See README 'Input data format'.", dx_suffix)
+        cohort = cohort.drop(columns=dx_cols)
     return cohort.reset_index(drop=True), list(outcomes)
 
 

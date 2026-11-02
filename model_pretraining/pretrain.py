@@ -144,6 +144,7 @@ def main():
         dataset = PregeneratedDataset(args.pregenerated_data, tokenizer, epoch, num_data_epochs)
         loader = DataLoader(dataset, sampler=RandomSampler(dataset), batch_size=args.train_batch_size, num_workers=args.num_workers)
         train_model.train()
+        optimizer.zero_grad()  # drop any partial gradient accumulation from the previous epoch
         running, n_batches = 0.0, 0
         pbar = tqdm(loader, desc=f"Epoch {epoch + 1}/{args.epochs}")
         for step, batch in enumerate(pbar):

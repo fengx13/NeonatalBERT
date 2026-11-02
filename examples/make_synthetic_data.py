@@ -7,7 +7,8 @@ check that the pipeline runs end to end on your machine.
 
 Outputs (in --out_dir):
     notes.csv        patient_id, note_text, hours_since_birth, note_type
-    labels.csv       patient_id, <outcomes>, birth_year, split
+    labels.csv       patient_id, <outcomes>, <outcome>_dx_hours, birth_year, split
+    tabular.csv      patient_id + first-day structured features (for the tabular baseline)
     pretrain_corpus.csv  note table for the pretraining example
 """
 
@@ -77,13 +78,27 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     prevalence = {"rds": 0.25, "bpd": 0.08, "ivh": 0.06, "nec": 0.05, "sepsis": 0.10, "jaundice": 0.30, "death": 0.04}
 
-    notes, labels = [], []
+    notes, labels, tabular = [], [], []
     for i in range(args.n_patients):
         pid = f"P{i:05d}"
         y = {o: int(rng.rand() < p) for o, p in prevalence.items()}
         positives = {o for o, v in y.items() if v}
         year = int(rng.choice(range(2014, 2022)))
-        labels.append({"patient_id": pid, **y, "birth_year": year, "split": "test" if year == 2021 else "train"})
+        # Diagnosis time for positive cases: ~15% are diagnosed on day 1 and must be excluded for that outcome
+        dx = {f"{o}_dx_hours": (round(float(rng.uniform(1, 24) if rng.rand() < 0.15 else rng.uniform(25, 24 * 60)), 1)
+                                if v and o != "death" else (round(float(rng.uniform(25, 24 * 60)), 1) if v else np.nan))
+              for o, v in y.items()}
+        labels.append({"patient_id": pid, **y, **dx, "birth_year": year, "split": "test" if year == 2021 else "train"})
+        sick = len(positives)
+        tabular.append({
+            "patient_id": pid,
+            "gestational_age": round(float(np.clip(rng.normal(38 - 2.5 * sick, 2.5), 23, 42)), 1),
+            "birth_weight": round(float(np.clip(rng.normal(3300 - 450 * sick, 500), 450, 4800))),
+            "mother_age": int(rng.randint(18, 45)),
+            "sex_male": int(rng.rand() < 0.5),
+            "heart_rate": round(float(rng.normal(140 + 6 * sick, 12)), 0) if rng.rand() > 0.1 else np.nan,
+            "spo2": round(float(np.clip(rng.normal(97 - 1.5 * sick, 2), 70, 100)), 0) if rng.rand() > 0.15 else np.nan,
+        })
         for _ in range(rng.randint(1, 5)):
             notes.append({
                 "patient_id": pid,
@@ -94,6 +109,7 @@ def main():
     notes = pd.DataFrame(notes)
     notes.to_csv(out / "notes.csv", index=False)
     pd.DataFrame(labels).to_csv(out / "labels.csv", index=False)
+    pd.DataFrame(tabular).to_csv(out / "tabular.csv", index=False)
     notes.rename(columns={"note_text": "text"}).assign(note_id=range(len(notes)))[["note_id", "text"]].to_csv(out / "pretrain_corpus.csv", index=False)
     print(f"Wrote {len(notes)} notes for {args.n_patients} patients to {out}")
 

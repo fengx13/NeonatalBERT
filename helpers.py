@@ -202,7 +202,7 @@ def summarise_results(results: Dict[str, Dict[str, Dict[str, float]]]) -> pd.Dat
         rows.append(row)
     df = pd.DataFrame(rows)
     if len(df) > 1:
-        mean_row = {"outcome": "MEAN"}
+        mean_row = {"outcome": f"MEAN ({len(df)} outcomes)"}
         for col in ["auroc", "auprc", "auprc_relative", "sensitivity", "specificity", "f1"]:
             if col in df:
                 mean_row[col] = df[col].mean()
